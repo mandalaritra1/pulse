@@ -1,5 +1,5 @@
 // Offline cache for Pulse. Bump VERSION when you change any file.
-const VERSION = 'pulse-v1';
+const VERSION = 'pulse-v2';
 const FILES = ['./', 'index.html', 'dsp.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
 

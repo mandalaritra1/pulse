@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0d0b0c">
-<meta name="description" content="Ad-free camera heart-rate monitor. Runs entirely on your phone.">
+<meta name="description" content="Ad-free camera heart-rate and HRV monitor. Runs entirely on your phone.">
 <title>Pulse</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
@@ -12,63 +12,91 @@
 <style>
   :root {
     --bg: #0d0b0c; --card: #171314; --line: #2a2324; --text: #f4eeee;
-    --muted: #9b8f90; --red: #ff3b4e; --red-dim: #5a1a22; --ok: #4cd08a; --warn: #f2b84b;
+    --muted: #9b8f90; --red: #ff3b4e; --ok: #4cd08a; --warn: #f2b84b; --bad: #ff7b6b;
+    --lf: #f2b84b; --hf: #5cc8e0;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
     font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   body { padding: env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom)); }
-  main { max-width: 440px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  main { max-width: 440px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
   header { display: flex; align-items: center; justify-content: space-between; padding-top: 14px; }
   header h1 { font-size: 20px; margin: 0; letter-spacing: .02em; }
   header h1 span { color: var(--red); }
-  #preview { width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
-    border: 2px solid var(--line); background: #000; opacity: .9; }
+  #preview { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--line); background: #000; opacity: .9; }
 
-  .dial { position: relative; width: min(78vw, 300px); aspect-ratio: 1; margin: 6px auto 0; }
+  /* mode switch */
+  .seg { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
+  .seg button { flex: 1; padding: 9px 0; border-radius: 9px; background: none; color: var(--muted); font-weight: 600; font-size: 15px; }
+  .seg button.on { background: var(--red); color: #fff; }
+  .seg.small { align-self: center; }
+  .seg.small button { padding: 5px 14px; font-size: 13px; flex: none; }
+  .seg.small button.on { background: #3a2a2c; color: var(--text); }
+  .seg button:disabled { opacity: .45; }
+  #modeHint { text-align: center; color: var(--muted); font-size: 13px; margin-top: -6px; }
+
+  .dial { position: relative; width: min(70vw, 270px); aspect-ratio: 1; margin: 0 auto; }
   .dial > svg { position: absolute; inset: 0; transform: rotate(-90deg); }
   .dial circle { fill: none; stroke-width: 10; }
   .dial .track { stroke: var(--line); }
   .dial .prog { stroke: var(--red); stroke-linecap: round; transition: stroke-dashoffset .25s linear; }
   .dial .inner { position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; text-align: center; }
-  #heart { width: 34px; height: 34px; fill: var(--red); transition: transform .12s ease-out; }
+  #heart { width: 30px; height: 30px; fill: var(--red); transition: transform .12s ease-out; }
   #heart.beat { transform: scale(1.35); }
-  #bpm { font-size: 76px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; margin-top: 4px; }
+  #bpm { font-size: 70px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; margin-top: 4px; }
   #bpm.dim { color: var(--muted); }
-  .unit { color: var(--muted); font-size: 14px; letter-spacing: .12em; text-transform: uppercase; }
+  .unit { color: var(--muted); font-size: 13px; letter-spacing: .12em; text-transform: uppercase; }
+  #clock { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; min-height: 20px; margin-top: 2px; }
 
-  #status { text-align: center; min-height: 44px; color: var(--muted); font-size: 15px; padding: 0 8px; }
+  #status { text-align: center; min-height: 42px; color: var(--muted); font-size: 15px; padding: 0 8px; }
   #status b { color: var(--text); font-weight: 600; }
+  #live { text-align: center; color: var(--muted); font-size: 13px; min-height: 18px; margin-top: -10px; font-variant-numeric: tabular-nums; }
 
-  canvas#wave { width: 100%; height: 90px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  canvas.plot { width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 12px; display: block; }
+  #wave { height: 84px; }
 
   button { font: inherit; border: 0; cursor: pointer; }
-  #go { width: 100%; padding: 18px; border-radius: 16px; background: var(--red); color: #fff;
+  #go { width: 100%; padding: 17px; border-radius: 16px; background: var(--red); color: #fff;
     font-size: 18px; font-weight: 650; letter-spacing: .02em; }
   #go.stop { background: var(--card); color: var(--text); border: 1px solid var(--line); }
   #go:active { transform: scale(.985); }
+  .ghost { background: none; color: var(--muted); font-size: 13px; padding: 6px 0 0; text-decoration: underline; }
 
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
   .card h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; margin: 0 0 8px; font-weight: 600; }
+  .card h3 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 14px 0 6px; font-weight: 600; }
   #result { display: none; }
-  #result .row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-  #result .big { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .big { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .pill { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; }
-  .pill.good { color: var(--ok); } .pill.fair { color: var(--warn); }
-  #result p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+  .pill.good { color: var(--ok); } .pill.fair { color: var(--warn); } .pill.bad { color: var(--bad); }
+  .note { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .stat { background: #1e1819; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  .stat .k { color: var(--muted); font-size: 12px; }
+  .stat .v { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .stat .v small { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .plots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .btnrow { display: flex; gap: 8px; margin-top: 12px; }
+  .btnrow button { flex: 1; padding: 10px; border-radius: 10px; background: #241d1e; color: var(--text); border: 1px solid var(--line); font-size: 14px; }
 
   #hist ul { list-style: none; margin: 0; padding: 0; }
-  #hist li { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--line);
-    font-variant-numeric: tabular-nums; }
+  #hist li { display: flex; justify-content: space-between; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line);
+    font-variant-numeric: tabular-nums; font-size: 15px; }
   #hist li:first-child { border-top: 0; }
-  #hist li span:first-child { color: var(--muted); }
+  #hist li .when { color: var(--muted); }
+  #hist li .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; margin-left: 6px; }
   #hist .empty { color: var(--muted); font-size: 14px; }
-  #clear { background: none; color: var(--muted); font-size: 13px; padding: 6px 0 0; text-decoration: underline; }
 
   details { color: var(--muted); font-size: 14px; }
   details summary { cursor: pointer; color: var(--text); }
   details li { margin: 4px 0; }
+  details dt { color: var(--text); margin-top: 6px; }
+  details dd { margin: 0 0 0 0; }
   .foot { text-align: center; color: var(--muted); font-size: 12px; }
   #vid { position: fixed; width: 2px; height: 2px; opacity: 0.01; pointer-events: none; left: 0; top: 0; }
 </style>
@@ -80,6 +108,18 @@
     <canvas id="preview" width="40" height="40" aria-label="Camera preview"></canvas>
   </header>
 
+  <div class="seg" id="modes" role="tablist">
+    <button data-mode="quick">Quick</button>
+    <button data-mode="s30">30 s</button>
+    <button data-mode="hrv">HRV</button>
+  </div>
+  <div class="seg small" id="durs" hidden>
+    <button data-dur="60">1 min</button>
+    <button data-dur="120">2 min</button>
+    <button data-dur="300">5 min</button>
+  </div>
+  <div id="modeHint"></div>
+
   <div class="dial" aria-live="polite">
     <svg viewBox="0 0 120 120" aria-hidden="true">
       <circle class="track" cx="60" cy="60" r="54"/>
@@ -89,36 +129,52 @@
       <svg id="heart" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.4C.9 8.2 3 4.5 6.6 4.5c2.1 0 3.6 1.2 5.4 3.3 1.8-2.1 3.3-3.3 5.4-3.3 3.6 0 5.7 3.7 4.2 7.1C19.5 16.4 12 21 12 21z"/></svg>
       <div id="bpm" class="dim">--</div>
       <div class="unit">bpm</div>
+      <div id="clock"></div>
     </div>
   </div>
 
   <div id="status">Cover the <b>rear camera and flash</b> with a fingertip, then press Start.</div>
+  <div id="live"></div>
 
-  <canvas id="wave"></canvas>
+  <canvas id="wave" class="plot"></canvas>
 
   <button id="go">Start</button>
 
-  <div id="result" class="card">
-    <h2>Result</h2>
-    <div class="row"><span class="big" id="rBpm">--</span><span>bpm</span><span class="pill" id="rConf"></span></div>
-    <p id="rNote"></p>
-  </div>
+  <div id="result" class="card"></div>
 
   <div id="hist" class="card">
     <h2>History</h2>
     <ul id="histList"></ul>
-    <button id="clear" hidden>Clear history</button>
+    <div class="btnrow" id="histBtns" hidden>
+      <button id="exportHist">Export history (CSV)</button>
+      <button id="clear">Clear</button>
+    </div>
   </div>
 
   <details class="card">
-    <summary>Tips for a fast, clean reading</summary>
+    <summary>Tips for a clean reading</summary>
     <ul>
       <li>Rest your fingertip <b>lightly</b> over both the lens and the flash. Pressing hard squeezes the blood out and flattens the signal.</li>
-      <li>Keep your hand and the phone still. Resting the phone on a table helps.</li>
+      <li>Keep still. For 30 s and HRV, rest the phone on a table and sit comfortably.</li>
       <li>Cold fingers give weak signals: warm them up first.</li>
-      <li>A reading usually locks in 7–10 s. If it's taking longer, adjust your finger slightly.</li>
-      <li>Estimate only, not a medical device.</li>
+      <li>For HRV, measure at the same time each day (e.g. after waking), breathe normally, and don't talk.</li>
+      <li>If you lift your finger during HRV, recording pauses; put it back and it continues. Intervals across the gap are never counted.</li>
+      <li>Estimates only, not a medical device.</li>
     </ul>
+  </details>
+
+  <details class="card">
+    <summary>What the HRV numbers mean</summary>
+    <dl>
+      <dt>RMSSD</dt><dd>Root-mean-square of successive beat-to-beat differences. Tracks fast (parasympathetic, "rest and digest") variation. The standard daily-tracking metric; compare against your own baseline, not other people.</dd>
+      <dt>SDNN</dt><dd>Standard deviation of all clean beat intervals: total variability over the recording.</dd>
+      <dt>pNN50</dt><dd>% of successive intervals differing by more than 50 ms.</dd>
+      <dt>SD1 / SD2</dt><dd>Width / length of the Poincaré cloud: short-term vs long-term variability.</dd>
+      <dt>Stress index</dt><dd>Baevsky's index from the interval histogram. Higher means a narrower, more rigid rhythm.</dd>
+      <dt>LF, HF, LF/HF</dt><dd>Power of interval oscillations at 0.04–0.15 Hz and 0.15–0.4 Hz (Lomb–Scargle). HF mostly follows breathing. Needs ≥ 2 min; physiological interpretation of LF/HF is debated.</dd>
+      <dt>Breathing</dt><dd>Your heart speeds up on each in-breath and slows on each out-breath; the dominant period of that rhythm gives breaths per minute.</dd>
+      <dt>Timing precision</dt><dd>Estimated uncertainty of each beat's timing. Its contribution is subtracted from RMSSD and SDNN, so camera noise doesn't inflate them.</dd>
+    </dl>
   </details>
 
   <div class="foot">No ads, no tracking. Everything is processed on this phone.</div>
@@ -137,16 +193,16 @@
   const prev = $('preview'), pctx = prev.getContext('2d');
   const wave = $('wave'), wctx = wave.getContext('2d');
   const ring = $('ring'), RING = 339.3;
-  const bpmEl = $('bpm'), statusEl = $('status'), goBtn = $('go'), heart = $('heart');
+  const bpmEl = $('bpm'), statusEl = $('status'), goBtn = $('go'), heart = $('heart'), clockEl = $('clock'), liveEl = $('live');
 
   // ---- tunables ----
   const SETTLE_S = 1.0;      // discard while auto-exposure settles
-  const MIN_S = 6.5;         // earliest possible result
-  const TYPICAL_S = 9;       // for the progress ring
-  const MAX_S = 25;          // give up after this
-  const WIN_S = 8;           // analysis window
-  const STABLE_S = 2.5;      // estimates must agree over this span
-  const EST_EVERY = 0.25;    // seconds between estimates
+  const MIN_S = 6.5;         // quick: earliest possible result
+  const TYPICAL_S = 9;       // quick: for the progress ring
+  const MAX_S = 25;          // quick: give up after this
+  const WIN_S = 8;           // live analysis window
+  const STABLE_S = 2.5;      // quick: estimates must agree over this span
+  const EST_EVERY = 0.25;    // seconds between live estimates
 
   // ---- storage (optional; page works without it) ----
   const store = {
@@ -154,28 +210,49 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
   };
 
+  // ---- mode selection ----
+  let mode = store.get('pulse.mode', 'quick');
+  let hrvDur = store.get('pulse.hrvDur', 120);
+  const HINTS = {
+    quick: 'Fastest reading, about 8 s.',
+    s30: 'Averages over several breaths: best for resting heart rate.',
+    hrv: 'Beat-to-beat variability. Sit still and breathe normally.',
+  };
+  function renderModes() {
+    document.querySelectorAll('#modes button').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
+    document.querySelectorAll('#durs button').forEach((b) => b.classList.toggle('on', +b.dataset.dur === hrvDur));
+    $('durs').hidden = mode !== 'hrv';
+    $('modeHint').textContent = HINTS[mode];
+  }
+  function lockModes(lock) { document.querySelectorAll('#modes button, #durs button').forEach((b) => (b.disabled = lock)); }
+  $('modes').addEventListener('click', (e) => {
+    const m = e.target.dataset && e.target.dataset.mode;
+    if (m && !running) { mode = m; store.set('pulse.mode', m); renderModes(); }
+  });
+  $('durs').addEventListener('click', (e) => {
+    const d = e.target.dataset && +e.target.dataset.dur;
+    if (d && !running) { hrvDur = d; store.set('pulse.hrvDur', d); renderModes(); }
+  });
+
   // ---- state ----
   let stream = null, track = null, torchOn = false, running = false, wakeLock = null;
   let phase = 'idle';          // idle | nofinger | settling | measuring
-  let fingerSince = 0, fingerLostAt = 0, settleUntil = 0, t0 = 0;
-  let ts = [], rs = [], gs = [];
-  let ests = [], lastEst = 0, lastBeatT = 0, useMediaTime = null, lastMediaTime = -1;
-  let channel = 'r';
+  let fingerSince = 0, fingerLostAt = 0, settleUntil = 0, t0 = null;
+  let ts = [], rs = [], gs = [], sg = [];
+  let seg = 0, segStartIdx = 0, recorded = 0, lastT = null;
+  let ests = [], lastEst = -1, lastBeatT = 0, lastLive = 0, timeSrc = null, lastMediaTime = -1;
+  let channel = 'r', lastSession = null;
 
+  const target = () => (mode === 's30' ? 30 : mode === 'hrv' ? hrvDur : 0);
+  const fmtClock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   function setStatus(html) { statusEl.innerHTML = html; }
   function setRing(f) {
     f = Math.max(0, Math.min(1, f));
     ring.style.strokeLinecap = f >= 1 ? 'butt' : 'round';
     ring.style.strokeDashoffset = String(RING * (1 - f));
   }
-  function setBpm(v, confident) {
-    bpmEl.textContent = v ? String(Math.round(v)) : '--';
-    bpmEl.classList.toggle('dim', !confident);
-  }
-  function beat() {
-    heart.classList.add('beat');
-    setTimeout(() => heart.classList.remove('beat'), 130);
-  }
+  function setBpm(v, confident) { bpmEl.textContent = v ? String(Math.round(v)) : '--'; bpmEl.classList.toggle('dim', !confident); }
+  function beat() { heart.classList.add('beat'); setTimeout(() => heart.classList.remove('beat'), 130); }
 
   // ---- camera + torch ----
   const BASE = { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 30 } };
@@ -185,10 +262,10 @@
     return { s, t: s.getVideoTracks()[0] };
   }
   function stopStream(s) { if (s) s.getTracks().forEach((t) => t.stop()); }
+  function remember(t) { try { store.set('pulse.cam', t.getSettings().deviceId); } catch {} }
 
   async function openCameraWithTorch() {
-    // 1) the camera that worked last time (fast path)
-    const remembered = store.get('pulse.cam', null);
+    const remembered = store.get('pulse.cam', null); // fast path: last camera that had a torch
     if (remembered) {
       try {
         const c = await open({ ...BASE, deviceId: { exact: remembered } });
@@ -196,16 +273,13 @@
         stopStream(c.s);
       } catch {}
     }
-    // 2) default rear camera
     let c = await open({ ...BASE, facingMode: { ideal: 'environment' } });
     if (caps(c.t).torch) { remember(c.t); return c; }
-    // 3) other rear cameras (multi-camera phones often put the flash on one)
-    try {
+    try { // multi-camera phones often have the flash on just one of them
       const firstId = c.t.getSettings().deviceId;
       const devs = (await navigator.mediaDevices.enumerateDevices())
         .filter((d) => d.kind === 'videoinput' && d.deviceId && d.deviceId !== firstId);
-      const back = devs.filter((d) => /back|rear|environment/i.test(d.label));
-      for (const d of back.slice(0, 4)) {
+      for (const d of devs.filter((d) => /back|rear|environment/i.test(d.label)).slice(0, 4)) {
         stopStream(c.s);
         try {
           const cc = await open({ ...BASE, deviceId: { exact: d.deviceId } });
@@ -214,16 +288,12 @@
         } catch {}
       }
     } catch {}
-    // 4) no torch anywhere: fall back to the default rear camera
     stopStream(c.s);
     return open({ ...BASE, facingMode: { ideal: 'environment' } });
   }
-  function remember(t) { try { store.set('pulse.cam', t.getSettings().deviceId); } catch {} }
-
   async function setTorch(on) {
     if (!track) return false;
-    try { await track.applyConstraints({ advanced: [{ torch: on }] }); return true; }
-    catch { return false; }
+    try { await track.applyConstraints({ advanced: [{ torch: on }] }); return true; } catch { return false; }
   }
 
   // ---- start / stop ----
@@ -234,6 +304,7 @@
     }
     $('result').style.display = 'none';
     goBtn.textContent = 'Stop'; goBtn.classList.add('stop');
+    lockModes(true);
     setStatus('Starting camera…');
     try {
       const c = await openCameraWithTorch();
@@ -241,7 +312,7 @@
     } catch (e) {
       setStatus(e && e.name === 'NotAllowedError'
         ? 'Camera permission was denied. Allow it in the browser’s site settings and try again.'
-        : 'Couldn’t open the camera (' + (e && e.name || 'error') + ').');
+        : 'Couldn’t open the camera (' + ((e && e.name) || 'error') + ').');
       resetButton();
       return;
     }
@@ -249,8 +320,8 @@
     try { await vid.play(); } catch {}
     torchOn = await setTorch(true);
     try { wakeLock = await navigator.wakeLock.request('screen'); } catch {}
-    running = true;
-    resetMeasurement('nofinger');
+    running = true; timeSrc = null; lastMediaTime = -1;
+    resetMeasurement();
     setStatus(torchOn
       ? 'Place your fingertip over the <b>camera and flash</b>.'
       : 'No flash control on this camera. Cover the lens and hold a <b>bright light</b> behind your finger.');
@@ -267,14 +338,21 @@
     phase = 'idle';
     resetButton();
   }
-  function resetButton() { goBtn.textContent = 'Start'; goBtn.classList.remove('stop'); }
+  function resetButton() { goBtn.textContent = 'Start'; goBtn.classList.remove('stop'); lockModes(false); }
 
-  function resetMeasurement(p) {
-    phase = p; ts = []; rs = []; gs = []; ests = []; lastEst = 0;
-    setRing(0); setBpm(0, false); clearWave();
+  function resetMeasurement() {
+    phase = 'nofinger'; fingerSince = 0; fingerLostAt = 0;
+    ts = []; rs = []; gs = []; sg = []; ests = []; lastEst = -1; lastLive = 0;
+    t0 = null; seg = 0; segStartIdx = 0; recorded = 0; lastT = null;
+    setRing(0); setBpm(0, false); clearWave(); clockEl.textContent = target() ? fmtClock(target()) : ''; liveEl.textContent = '';
   }
 
-  goBtn.addEventListener('click', () => (running ? (stop(), setStatus('Stopped.')) : start()));
+  goBtn.addEventListener('click', () => {
+    if (!running) return start();
+    // stopping a long run early: analyse what we have if it's enough
+    if (mode === 'hrv' && recorded >= 60) return finishLong(true);
+    stop(); setStatus('Stopped.');
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && running) { stop(); setStatus('Paused while the app was in the background.'); }
   });
@@ -285,16 +363,12 @@
     if (vid.requestVideoFrameCallback) vid.requestVideoFrameCallback(onFrame);
     else requestAnimationFrame((now) => onFrame(now, null));
   }
-
   function onFrame(now, meta) {
     if (!running) return;
-    // timestamp: media time of the frame when available (less jitter)
-    if (useMediaTime === null) useMediaTime = !!(meta && meta.mediaTime > 0);
-    let t = useMediaTime && meta ? meta.mediaTime : now / 1000;
-    if (!meta) { // rAF fallback: skip repeated frames
-      if (vid.currentTime === lastMediaTime) { loop(); return; }
-      lastMediaTime = vid.currentTime;
-    }
+    // timestamp: prefer the camera's capture time (least jitter), then media time
+    if (timeSrc === null) timeSrc = meta && meta.captureTime > 0 ? 'capture' : meta && meta.mediaTime > 0 ? 'media' : 'now';
+    const t = timeSrc === 'capture' ? meta.captureTime / 1000 : timeSrc === 'media' ? meta.mediaTime : now / 1000;
+    if (!meta) { if (vid.currentTime === lastMediaTime) { loop(); return; } lastMediaTime = vid.currentTime; }
     if (vid.videoWidth) process(t);
     loop();
   }
@@ -304,7 +378,6 @@
     gctx.drawImage(vid, 0, 0, W, H);
     pctx.drawImage(vid, 0, 0, prev.width, prev.height);
     const px = gctx.getImageData(0, 0, W, H).data;
-    // centre 60% of the frame
     const x0 = Math.floor(W * 0.2), x1 = Math.ceil(W * 0.8), y0 = Math.floor(H * 0.2), y1 = Math.ceil(H * 0.8);
     let R = 0, G = 0, B = 0, R2 = 0, n = 0;
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
@@ -313,11 +386,11 @@
     }
     R /= n; G /= n; B /= n;
     const sd = Math.sqrt(Math.max(0, R2 / n - R * R));
-    const finger = R > 50 && R > 1.4 * G && R > 1.4 * B && sd < 32;
-    step(t, R, G, finger);
+    step(t, R, G, R > 50 && R > 1.4 * G && R > 1.4 * B && sd < 32);
   }
 
   function step(t, R, G, finger) {
+    const long = mode !== 'quick';
     if (phase === 'nofinger') {
       if (finger) {
         if (!fingerSince) fingerSince = t;
@@ -328,142 +401,358 @@
     if (!finger) {
       if (!fingerLostAt) fingerLostAt = t;
       if (t - fingerLostAt > 0.4) {
-        resetMeasurement('nofinger'); fingerSince = 0; fingerLostAt = 0;
-        setStatus('Finger moved. Cover the <b>camera and flash</b> again.');
+        fingerSince = 0; fingerLostAt = 0;
+        if (mode === 'hrv' && recorded > 0) {
+          // keep the data; continue in a new segment when the finger returns
+          phase = 'nofinger'; seg++; segStartIdx = ts.length; lastT = null; lastEst = -1;
+          setStatus('Finger lifted: <b>recording paused</b>. Put it back to continue.');
+        } else {
+          resetMeasurement();
+          setStatus('Finger moved. Cover the <b>camera and flash</b> again.');
+        }
       }
       return;
     }
     fingerLostAt = 0;
     if (phase === 'settling') {
-      if (t >= settleUntil) { phase = 'measuring'; t0 = t; setStatus('Measuring. Keep still…'); }
+      if (t >= settleUntil) {
+        phase = 'measuring';
+        if (t0 === null) t0 = t;
+        setStatus(long ? 'Recording. Keep still and breathe normally…' : 'Measuring. Keep still…');
+      }
       return;
     }
-    // measuring
-    ts.push(t - t0); rs.push(R); gs.push(G);
-    if (ts.length > 30 * 40) { ts.shift(); rs.shift(); gs.shift(); }
-    const el = t - t0;
+
+    // ---- measuring ----
+    const tr = t - t0;
+    ts.push(tr); rs.push(R); gs.push(G); sg.push(seg);
+    if (lastT !== null) recorded += Math.min(0.2, Math.max(0, tr - lastT));
+    lastT = tr;
+    const segEl = tr - ts[segStartIdx];
     drawWave();
-    if (el - lastEst >= EST_EVERY && el >= 3.5) { lastEst = el; estimateNow(el); }
-    if (phase === 'measuring') setRing(Math.min(0.97, el / TYPICAL_S));
+    if (segEl - lastEst >= EST_EVERY && segEl >= 3.5) { lastEst = segEl; liveEstimate(segEl); }
+    if (phase !== 'measuring') return; // a finish may have happened
+
+    if (!long) { setRing(Math.min(0.97, recorded / TYPICAL_S)); return; }
+    const T = target();
+    setRing(recorded / T);
+    clockEl.textContent = fmtClock(Math.max(0, T - recorded)) + ' left';
+    if (mode === 'hrv' && recorded - lastLive >= 5 && recorded >= 15) { lastLive = recorded; liveHrv(); }
+    if (recorded >= T) finishLong(false);
   }
 
-  function estimateNow(el) {
-    const dur = Math.min(el, WIN_S);
-    const er = D.estimate(ts, rs, dur), eg = D.estimate(ts, gs, dur);
+  // live heart rate on the current segment (all modes); quick mode finishes here
+  function liveEstimate(segEl) {
+    const a = Math.max(segStartIdx, ts.length - 30 * 12);
+    const tt = ts.slice(a), dur = Math.min(segEl, WIN_S);
+    const er = D.estimate(tt, rs.slice(a), dur), eg = D.estimate(tt, gs.slice(a), dur);
     const e = eg.q > er.q * 1.15 ? eg : er;
     channel = e === eg ? 'g' : 'r';
-    if (e.bpm > 0) ests.push({ t: el, bpm: e.bpm, q: e.q });
+    if (e.bpm > 0) ests.push({ t: recorded, bpm: e.bpm, q: e.q });
     setBpm(e.q > 0.3 ? e.bpm : 0, false);
+    if (mode !== 'quick') return;
 
-    // done? recent estimates must agree and look clean
+    const el = recorded;
     if (el >= MIN_S) {
       const rec = ests.filter((x) => x.t >= el - STABLE_S);
       if (rec.length >= 8) {
         const b = rec.map((x) => x.bpm), med = D.median(b);
         const spread = Math.max(...b) - Math.min(...b);
         const minQ = Math.min(...rec.map((x) => x.q));
-        // slow hearts need a bit longer: insist on ~7 beats of data
         if (el >= 7 * 60 / med && minQ >= 0.35 && spread <= Math.max(3, 0.04 * med)) {
           const meanQ = rec.reduce((s, x) => s + x.q, 0) / rec.length;
-          return finish(med, meanQ >= 0.5 ? 'good' : 'fair', el);
+          return finishQuick(med, meanQ >= 0.5 ? 'good' : 'fair', el);
         }
       }
       if (el > 12) setStatus('Still locking on. Try <b>lighter pressure</b> and keep very still.');
     }
     if (el >= MAX_S) {
       const ok = ests.filter((x) => x.t >= el - 8 && x.q >= 0.3);
-      if (ok.length >= 6) return finish(D.median(ok.map((x) => x.bpm)), 'fair', el);
-      stop();
-      setRing(0); setBpm(0, false);
+      if (ok.length >= 6) return finishQuick(D.median(ok.map((x) => x.bpm)), 'fair', el);
+      stop(); setRing(0); setBpm(0, false);
       setStatus('Couldn’t get a clean signal. Cover the lens and flash fully, press <b>lightly</b>, keep still, and try again.');
     }
   }
 
-  function finish(bpm, conf, el) {
-    const v = Math.round(bpm);
-    stop();
-    setRing(1); setBpm(v, true);
-    try { navigator.vibrate && navigator.vibrate(60); } catch {}
-    setStatus('Done. You can lift your finger.');
-    $('rBpm').textContent = v;
-    const pill = $('rConf');
-    pill.textContent = conf === 'good' ? 'clean signal' : 'noisy signal';
-    pill.className = 'pill ' + conf;
-    $('rNote').textContent = `Measured in ${el.toFixed(1)} s` +
-      (conf === 'good' ? '.' : '. Measure again for a more reliable reading.');
-    $('result').style.display = 'block';
-    const h = store.get('pulse.history', []);
-    h.unshift({ t: Date.now(), bpm: v, conf });
-    store.set('pulse.history', h.slice(0, 50));
-    renderHistory();
+  // beat analysis over everything recorded; picks the cleaner colour channel
+  function analyse() {
+    const run = (vs) => {
+      const ibis = D.intervals(D.detectBeats(ts, vs, sg));
+      return { ibis, st: D.hrvStats(ibis) };
+    };
+    const a = run(rs), b = run(gs);
+    const score = (x) => (x.st.ok ? x.st.artifactPct + 0.5 * x.st.timingSd : 1e9);
+    return score(b) < score(a) ? b : a;
+  }
+  function liveHrv() {
+    const { st } = analyse();
+    if (st.ok) liveEl.textContent = `${st.n} beats · RMSSD ${Math.round(st.rmssd)} ms · ${st.artifactPct < 15 ? 'signal clean' : 'noisy, keep still'}`;
   }
 
-  // ---- waveform ----
+  function grade(st) {
+    if (st.artifactPct < 5 && st.timingSd < 6) return ['excellent signal', 'good'];
+    if (st.artifactPct < 15 && st.timingSd < 10) return ['good signal', 'good'];
+    if (st.artifactPct < 25) return ['fair signal', 'fair'];
+    return ['unreliable', 'bad'];
+  }
+
+  // ---- results ----
+  function done(bpm) {
+    stop(); setRing(1); setBpm(bpm, true); clockEl.textContent = ''; liveEl.textContent = '';
+    try { navigator.vibrate && navigator.vibrate(60); } catch {}
+    setStatus('Done. You can lift your finger.');
+  }
+
+  function finishQuick(bpm, conf, el) {
+    const v = Math.round(bpm);
+    done(v);
+    showResult(`
+      <h2>Result</h2>
+      <div class="row"><span class="big">${v}</span><span>bpm</span>
+        <span class="pill ${conf}">${conf === 'good' ? 'clean signal' : 'noisy signal'}</span></div>
+      <p class="note">Measured in ${el.toFixed(1)} s${conf === 'good' ? '.' : '. Measure again for a more reliable reading.'}</p>`);
+    saveHistory({ mode: 'quick', bpm: v, conf });
+  }
+
+  function finishLong(early) {
+    const dur = recorded;
+    const { ibis, st } = analyse();
+    lastSession = { mode, ibis, st, when: Date.now(), dur };
+    if (!st.ok || st.n < (mode === 'hrv' ? 30 : 12)) {
+      // not enough clean beats: fall back to the live estimates for HR
+      const ok = ests.filter((x) => x.q >= 0.3);
+      stop(); setRing(0);
+      if (ok.length >= 8) {
+        const v = Math.round(D.median(ok.map((x) => x.bpm)));
+        setBpm(v, true);
+        showResult(`<h2>Result</h2><div class="row"><span class="big">${v}</span><span>bpm</span>
+          <span class="pill fair">noisy signal</span></div>
+          <p class="note">Too few clean beats for beat-to-beat analysis. Press lighter and keep still for HRV.</p>`);
+        saveHistory({ mode, bpm: v, conf: 'fair' });
+      } else {
+        setBpm(0, false);
+        setStatus('Couldn’t get a clean signal. Cover the lens and flash fully, press <b>lightly</b>, keep still, and try again.');
+      }
+      return;
+    }
+    const v = Math.round(st.meanHR);
+    done(v);
+    const [gtxt, gcls] = grade(st);
+    const r0 = (x) => Math.round(x), r1 = (x) => x.toFixed(1);
+    const stat = (k, v, u = '') => `<div class="stat"><div class="k">${k}</div><div class="v">${v}${u ? ` <small>${u}</small>` : ''}</div></div>`;
+    const lenTxt = `${fmtClock(dur)}${early ? ' (stopped early)' : ''}`;
+
+    if (mode === 's30') {
+      showResult(`
+        <h2>Resting heart rate · 30 s</h2>
+        <div class="row"><span class="big">${v}</span><span>bpm</span><span class="pill ${gcls}">${gtxt}</span></div>
+        <p class="note">Range ${r0(st.minHR)}–${r0(st.maxHR)} bpm over ${st.n} clean beats (${r1(st.artifactPct)}% artifacts).</p>
+        <div class="grid">${stat('RMSSD (30 s)', r0(st.rmssd), 'ms')}${stat('Mean interval', r0(st.meanNN), 'ms')}</div>
+        <div class="btnrow"><button id="csv">Export beats (CSV)</button></div>`);
+      saveHistory({ mode, bpm: v, conf: gcls, rmssd: r0(st.rmssd), min: r0(st.minHR), max: r0(st.maxHR) });
+    } else {
+      const freq = st.lf != null;
+      showResult(`
+        <h2>HRV · ${lenTxt}</h2>
+        <div class="row"><span class="big">${r0(st.rmssd)}</span><span>ms RMSSD</span><span class="pill ${gcls}">${gtxt}</span></div>
+        <p class="note">${st.n} clean beats · ${r1(st.artifactPct)}% artifacts · timing precision ±${r1(st.timingSd)} ms</p>
+        <div class="grid">
+          ${stat('Heart rate', v, `bpm (${r0(st.minHR)}–${r0(st.maxHR)})`)}
+          ${stat('SDNN', r0(st.sdnn), 'ms')}
+          ${stat('pNN50', r0(st.pnn50), '%')}
+          ${stat('Mean interval', r0(st.meanNN), 'ms')}
+          ${stat('SD1 / SD2', `${r0(st.sd1)} / ${r0(st.sd2)}`, 'ms')}
+          ${stat('Stress index', r0(st.stressIndex))}
+          ${stat('Breathing', st.respRate ? r1(st.respRate) : '–', st.respRate ? '/min' : '')}
+          ${freq ? stat('LF / HF', st.lfhf != null ? st.lfhf.toFixed(2) : '–') : stat('LF / HF', '–', 'needs 2 min')}
+          ${freq ? stat('LF power', r0(st.lf), `ms² · ${r0(st.lfnu)} nu`) + stat('HF power', r0(st.hf), `ms² · ${r0(st.hfnu)} nu`) : ''}
+        </div>
+        <h3>Beat intervals over time</h3>
+        <canvas id="tacho" class="plot" style="height:120px"></canvas>
+        <div class="plots" style="margin-top:8px">
+          <div><h3 style="margin-top:6px">Poincaré</h3><canvas id="poinc" class="plot" style="aspect-ratio:1"></canvas></div>
+          <div><h3 style="margin-top:6px">Spectrum</h3><canvas id="spec" class="plot" style="aspect-ratio:1"></canvas>
+            <div class="legend"><span><i style="background:var(--lf)"></i>LF</span><span><i style="background:var(--hf)"></i>HF</span></div></div>
+        </div>
+        <div class="btnrow"><button id="csv">Export beats (CSV)</button></div>`);
+      drawTacho($('tacho'), ibis);
+      drawPoincare($('poinc'), ibis, st);
+      drawSpectrum($('spec'), st);
+      saveHistory({ mode, bpm: v, conf: gcls, dur: Math.round(dur), rmssd: r0(st.rmssd), sdnn: r0(st.sdnn),
+        pnn50: r0(st.pnn50), si: r0(st.stressIndex), lfhf: st.lfhf != null ? +st.lfhf.toFixed(2) : null,
+        resp: st.respRate ? +st.respRate.toFixed(1) : null, art: +st.artifactPct.toFixed(1) });
+    }
+    const csvBtn = $('csv');
+    if (csvBtn) csvBtn.onclick = exportBeats;
+  }
+
+  function showResult(html) { const el = $('result'); el.innerHTML = html; el.style.display = 'block'; }
+
+  // ---- export ----
+  function download(name, text) {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+  const stamp = (t) => new Date(t).toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  function exportBeats() {
+    if (!lastSession) return;
+    const rows = ['time_s,ibi_ms,valid,segment,timing_sd_ms'];
+    for (const x of lastSession.ibis) rows.push(`${x.t.toFixed(4)},${x.ibi.toFixed(1)},${x.valid ? 1 : 0},${x.seg},${x.sig.toFixed(1)}`);
+    download(`pulse-${lastSession.mode}-${stamp(lastSession.when)}.csv`, rows.join('\n'));
+  }
+  $('exportHist').onclick = () => {
+    const h = store.get('pulse.history', []);
+    const cols = ['time', 'mode', 'bpm', 'quality', 'duration_s', 'rmssd_ms', 'sdnn_ms', 'pnn50', 'stress_index', 'lf_hf', 'breaths_per_min', 'artifacts_pct'];
+    const rows = [cols.join(',')].concat(h.map((r) => [new Date(r.t).toISOString(), r.mode || 'quick', r.bpm, r.conf, r.dur ?? '',
+      r.rmssd ?? '', r.sdnn ?? '', r.pnn50 ?? '', r.si ?? '', r.lfhf ?? '', r.resp ?? '', r.art ?? ''].join(',')));
+    download(`pulse-history-${stamp(Date.now())}.csv`, rows.join('\n'));
+  };
+
+  // ---- plots ----
+  function fit(c) {
+    const dpr = window.devicePixelRatio || 1;
+    c.width = Math.round(c.clientWidth * dpr); c.height = Math.round(c.clientHeight * dpr);
+    const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height);
+    return { g, W: c.width, H: c.height, dpr };
+  }
+  function label(g, dpr, txt, x, y, align = 'left') {
+    g.fillStyle = '#9b8f90'; g.font = `${11 * dpr}px system-ui, sans-serif`; g.textAlign = align; g.fillText(txt, x, y);
+  }
+  function drawTacho(c, ibis) {
+    const { g, W, H, dpr } = fit(c);
+    const ok = ibis.filter((x) => x.valid);
+    if (ok.length < 2) return;
+    const v = ok.map((x) => x.ibi).sort((a, b) => a - b);
+    let lo = v[Math.floor(0.01 * (v.length - 1))], hi = v[Math.ceil(0.99 * (v.length - 1))];
+    const pad = Math.max(20, 0.15 * (hi - lo)); lo -= pad; hi += pad;
+    const tA = ibis[0].t, tB = ibis[ibis.length - 1].t;
+    const X = (t) => 8 * dpr + ((t - tA) / (tB - tA || 1)) * (W - 16 * dpr);
+    const Y = (y) => H - 16 * dpr - ((y - lo) / (hi - lo)) * (H - 30 * dpr);
+    g.strokeStyle = '#ff3b4e'; g.lineWidth = 1.6 * dpr; g.lineJoin = 'round';
+    g.beginPath(); let pen = false, prevSeg = null;
+    for (const x of ibis) {
+      if (!x.valid || x.seg !== prevSeg) { pen = false; }
+      if (x.valid) { pen ? g.lineTo(X(x.t), Y(x.ibi)) : g.moveTo(X(x.t), Y(x.ibi)); pen = true; }
+      prevSeg = x.seg;
+    }
+    g.stroke();
+    g.fillStyle = '#9b8f90';
+    for (const x of ibis) if (!x.valid) { const yy = Y(Math.max(lo, Math.min(hi, x.ibi))); g.fillRect(X(x.t) - 1.5 * dpr, yy - 1.5 * dpr, 3 * dpr, 3 * dpr); }
+    label(g, dpr, `${Math.round(hi)} ms`, 8 * dpr, 12 * dpr);
+    label(g, dpr, `${Math.round(lo)} ms`, 8 * dpr, H - 4 * dpr);
+    label(g, dpr, fmtClock(tB - tA), W - 8 * dpr, H - 4 * dpr, 'right');
+  }
+  function drawPoincare(c, ibis, st) {
+    const { g, W, H, dpr } = fit(c);
+    const pts = [];
+    for (let i = 0; i + 1 < ibis.length; i++) {
+      const a = ibis[i], b = ibis[i + 1];
+      if (a.valid && b.valid && a.seg === b.seg) pts.push([a.ibi, b.ibi]);
+    }
+    if (pts.length < 3) return;
+    const all = pts.flat().sort((a, b) => a - b);
+    let lo = all[Math.floor(0.01 * (all.length - 1))], hi = all[Math.ceil(0.99 * (all.length - 1))];
+    const pad = Math.max(25, 0.15 * (hi - lo)); lo -= pad; hi += pad;
+    const m = 10 * dpr, S = Math.min(W, H) - 2 * m;
+    const X = (v) => m + ((v - lo) / (hi - lo)) * S, Y = (v) => m + S - ((v - lo) / (hi - lo)) * S;
+    g.strokeStyle = '#3a3031'; g.lineWidth = dpr; g.beginPath(); g.moveTo(X(lo), Y(lo)); g.lineTo(X(hi), Y(hi)); g.stroke();
+    // SD1/SD2 ellipse along the identity line
+    const cx = X(st.meanNN), cy = Y(st.meanNN), k = S / (hi - lo);
+    g.strokeStyle = 'rgba(244,238,238,.55)'; g.lineWidth = 1.2 * dpr;
+    g.beginPath(); g.ellipse(cx, cy, Math.max(1, 2 * st.sd2 * k), Math.max(1, 2 * st.sd1 * k), -Math.PI / 4, 0, 2 * Math.PI); g.stroke();
+    g.fillStyle = 'rgba(255,59,78,.75)';
+    for (const [a, b] of pts) { g.beginPath(); g.arc(X(a), Y(b), 1.8 * dpr, 0, 2 * Math.PI); g.fill(); }
+    label(g, dpr, 'RRₙ → RRₙ₊₁', W - 6 * dpr, H - 5 * dpr, 'right');
+  }
+  function drawSpectrum(c, st) {
+    const { g, W, H, dpr } = fit(c);
+    if (!st.spectrum) { label(g, dpr, 'needs ≥ 1 min', W / 2, H / 2, 'center'); return; }
+    const { freqs, psd } = st.spectrum, fMax = 0.5;
+    const pk = Math.max(...psd.filter((_, i) => freqs[i] >= 0.03)) || 1;
+    const m = 8 * dpr;
+    const X = (f) => m + (f / fMax) * (W - 2 * m), Y = (p) => H - 16 * dpr - Math.min(1, p / pk) * (H - 26 * dpr);
+    const band = (a, b, col) => {
+      g.fillStyle = col; g.beginPath(); g.moveTo(X(a), Y(0));
+      freqs.forEach((f, i) => { if (f >= a && f <= b) g.lineTo(X(f), Y(psd[i])); });
+      g.lineTo(X(b), Y(0)); g.closePath(); g.fill();
+    };
+    band(0.04, 0.15, 'rgba(242,184,75,.55)');
+    band(0.15, 0.4, 'rgba(92,200,224,.55)');
+    g.strokeStyle = '#f4eeee'; g.lineWidth = 1.2 * dpr; g.beginPath();
+    freqs.forEach((f, i) => (i ? g.lineTo(X(f), Y(psd[i])) : g.moveTo(X(f), Y(psd[i]))));
+    g.stroke();
+    label(g, dpr, '0', X(0), H - 4 * dpr);
+    label(g, dpr, '0.5 Hz', X(0.5), H - 4 * dpr, 'right');
+    if (st.respRate) label(g, dpr, `${st.respRate.toFixed(1)}/min`, X(st.respRate / 60), 12 * dpr, 'center');
+  }
+
+  // ---- live waveform ----
   function sizeWave() {
     const dpr = window.devicePixelRatio || 1;
-    wave.width = Math.round(wave.clientWidth * dpr);
-    wave.height = Math.round(wave.clientHeight * dpr);
+    wave.width = Math.round(wave.clientWidth * dpr); wave.height = Math.round(wave.clientHeight * dpr);
   }
   function clearWave() { wctx.clearRect(0, 0, wave.width, wave.height); }
   function drawWave() {
     const vs = channel === 'g' ? gs : rs;
-    const u = D.resample(ts, vs, 5);
+    const a = Math.max(segStartIdx, ts.length - 30 * 7);
+    const tt = ts.slice(a);
+    const u = D.resample(tt, vs.slice(a), 5);
     if (u.length < 20) return;
     const s = D.bandpass(u);
     const peaks = D.findPeaks(s, D.FS, ests.length ? ests[ests.length - 1].bpm : 0);
-    // beat animation on a fresh peak (the last ~2 samples can't be peaks yet)
     if (peaks.length) {
-      const pt = ts[ts.length - 1] - (s.length - 1 - peaks[peaks.length - 1]) / D.FS;
-      if (pt > lastBeatT + 0.25 && ts[ts.length - 1] - pt < 0.35) { lastBeatT = pt; beat(); }
+      const pt = tt[tt.length - 1] - (s.length - 1 - peaks[peaks.length - 1]) / D.FS;
+      if (pt > lastBeatT + 0.25 && tt[tt.length - 1] - pt < 0.35) { lastBeatT = pt; beat(); }
     }
     const W = wave.width, H = wave.height, pad = H * 0.12;
-    const sorted = s.map(Math.abs).sort((a, b) => a - b);
+    const sorted = s.map(Math.abs).sort((x, y) => x - y);
     const amp = sorted[Math.floor(sorted.length * 0.95)] || 1;
     clearWave();
-    wctx.lineWidth = Math.max(2, W / 220);
-    wctx.strokeStyle = '#ff3b4e'; wctx.lineJoin = 'round';
+    wctx.lineWidth = Math.max(2, W / 220); wctx.strokeStyle = '#ff3b4e'; wctx.lineJoin = 'round';
     wctx.beginPath();
     const N = 5 * D.FS, off = N - s.length;
-    for (let i = 0; i < s.length; i++) {
-      const x = ((i + off) / (N - 1)) * W;
-      const y = H / 2 - Math.max(-1.2, Math.min(1.2, s[i] / amp)) * (H / 2 - pad);
-      i ? wctx.lineTo(x, y) : wctx.moveTo(x, y);
-    }
+    const yOf = (v) => H / 2 - Math.max(-1.2, Math.min(1.2, v / amp)) * (H / 2 - pad);
+    for (let i = 0; i < s.length; i++) { const x = ((i + off) / (N - 1)) * W; i ? wctx.lineTo(x, yOf(s[i])) : wctx.moveTo(x, yOf(s[i])); }
     wctx.stroke();
     wctx.fillStyle = '#f4eeee';
-    for (const p of peaks) {
-      const x = ((p + off) / (N - 1)) * W;
-      const y = H / 2 - Math.max(-1.2, Math.min(1.2, s[p] / amp)) * (H / 2 - pad);
-      wctx.beginPath(); wctx.arc(x, y, wctx.lineWidth * 1.4, 0, Math.PI * 2); wctx.fill();
-    }
+    for (const p of peaks) { wctx.beginPath(); wctx.arc(((p + off) / (N - 1)) * W, yOf(s[p]), wctx.lineWidth * 1.4, 0, Math.PI * 2); wctx.fill(); }
   }
 
   // ---- history ----
+  function saveHistory(r) {
+    const h = store.get('pulse.history', []);
+    h.unshift({ t: Date.now(), ...r });
+    store.set('pulse.history', h.slice(0, 300));
+    renderHistory();
+  }
   function renderHistory() {
     const h = store.get('pulse.history', []);
-    const ul = $('histList');
-    ul.innerHTML = '';
-    if (!h.length) { ul.innerHTML = '<li class="empty">No readings yet.</li>'; $('clear').hidden = true; return; }
-    for (const r of h.slice(0, 10)) {
-      const li = document.createElement('li');
+    const ul = $('histList'); ul.innerHTML = '';
+    if (!h.length) { ul.innerHTML = '<li class="empty">No readings yet.</li>'; $('histBtns').hidden = true; return; }
+    const TAG = { quick: 'quick', s30: '30 s', hrv: 'HRV' };
+    for (const r of h.slice(0, 12)) {
       const d = new Date(r.t);
       const when = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ', ' +
         d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-      li.innerHTML = `<span>${when}</span><span><b>${r.bpm}</b> bpm${r.conf === 'good' ? '' : ' <small style="color:var(--warn)">·noisy</small>'}</span>`;
+      const noisy = r.conf === 'good' ? '' : ' <small style="color:var(--warn)">·noisy</small>';
+      const val = r.mode === 'hrv' ? `<b>${r.rmssd}</b> ms · ${r.bpm} bpm${noisy}` : `<b>${r.bpm}</b> bpm${noisy}`;
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="when">${when}<span class="tag">${TAG[r.mode || 'quick']}</span></span><span>${val}</span>`;
       ul.appendChild(li);
     }
-    $('clear').hidden = false;
+    $('histBtns').hidden = false;
   }
   $('clear').addEventListener('click', () => { store.set('pulse.history', []); renderHistory(); });
 
   window.addEventListener('resize', sizeWave);
-  sizeWave(); renderHistory();
+  sizeWave(); renderModes(); renderHistory();
 
-  // offline / installable
-  if ('serviceWorker' in navigator && location.protocol === 'https:') {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  }
-  window.__pulse = { get phase() { return phase; }, get ests() { return ests; } }; // for testing
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  // test hook
+  window.__pulse = { get phase() { return phase; }, get ests() { return ests; }, get recorded() { return recorded; },
+    setMode(m, d) { mode = m; if (d) hrvDur = d; renderModes(); } };
 })();
 </script>
 </body>
