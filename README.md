@@ -43,4 +43,4 @@ Estimates every 0.25 s on the last ≤8 s of data. The result is reported as soo
 2.5 s of consecutive estimates agree within max(3 bpm, 4%), all with clean signal, after
 at least 6.5 s (and 7 beats). Typically 7–9 s after your finger goes on. Gives up at 25 s.
 
-If you change any file, bump `VERSION` in `sw.js` so installed copies update.
+If you change any file, bump `VERSION` in `sw.js` and the `?v=` on `dsp.js` (in index.html and sw.js) so installed copies update.

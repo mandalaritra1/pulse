@@ -1,6 +1,6 @@
 // Offline cache for Pulse. Bump VERSION when you change any file.
-const VERSION = 'pulse-v2';
-const FILES = ['./', 'index.html', 'dsp.js', 'manifest.webmanifest',
+const VERSION = 'pulse-v3';
+const FILES = ['./', 'index.html', 'dsp.js?v=3', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
 
 self.addEventListener('install', (e) => {
