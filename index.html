@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0b0c">
+<meta name="description" content="Ad-free camera heart-rate monitor. Runs entirely on your phone.">
+<title>Pulse</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #0d0b0c; --card: #171314; --line: #2a2324; --text: #f4eeee;
+    --muted: #9b8f90; --red: #ff3b4e; --red-dim: #5a1a22; --ok: #4cd08a; --warn: #f2b84b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { padding: env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom)); }
+  main { max-width: 440px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding-top: 14px; }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: .02em; }
+  header h1 span { color: var(--red); }
+  #preview { width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--line); background: #000; opacity: .9; }
+
+  .dial { position: relative; width: min(78vw, 300px); aspect-ratio: 1; margin: 6px auto 0; }
+  .dial > svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+  .dial circle { fill: none; stroke-width: 10; }
+  .dial .track { stroke: var(--line); }
+  .dial .prog { stroke: var(--red); stroke-linecap: round; transition: stroke-dashoffset .25s linear; }
+  .dial .inner { position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center; }
+  #heart { width: 34px; height: 34px; fill: var(--red); transition: transform .12s ease-out; }
+  #heart.beat { transform: scale(1.35); }
+  #bpm { font-size: 76px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; margin-top: 4px; }
+  #bpm.dim { color: var(--muted); }
+  .unit { color: var(--muted); font-size: 14px; letter-spacing: .12em; text-transform: uppercase; }
+
+  #status { text-align: center; min-height: 44px; color: var(--muted); font-size: 15px; padding: 0 8px; }
+  #status b { color: var(--text); font-weight: 600; }
+
+  canvas#wave { width: 100%; height: 90px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+
+  button { font: inherit; border: 0; cursor: pointer; }
+  #go { width: 100%; padding: 18px; border-radius: 16px; background: var(--red); color: #fff;
+    font-size: 18px; font-weight: 650; letter-spacing: .02em; }
+  #go.stop { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+  #go:active { transform: scale(.985); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .card h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; margin: 0 0 8px; font-weight: 600; }
+  #result { display: none; }
+  #result .row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  #result .big { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .pill { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; }
+  .pill.good { color: var(--ok); } .pill.fair { color: var(--warn); }
+  #result p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+
+  #hist ul { list-style: none; margin: 0; padding: 0; }
+  #hist li { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--line);
+    font-variant-numeric: tabular-nums; }
+  #hist li:first-child { border-top: 0; }
+  #hist li span:first-child { color: var(--muted); }
+  #hist .empty { color: var(--muted); font-size: 14px; }
+  #clear { background: none; color: var(--muted); font-size: 13px; padding: 6px 0 0; text-decoration: underline; }
+
+  details { color: var(--muted); font-size: 14px; }
+  details summary { cursor: pointer; color: var(--text); }
+  details li { margin: 4px 0; }
+  .foot { text-align: center; color: var(--muted); font-size: 12px; }
+  #vid { position: fixed; width: 2px; height: 2px; opacity: 0.01; pointer-events: none; left: 0; top: 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1><span>♥</span> Pulse</h1>
+    <canvas id="preview" width="40" height="40" aria-label="Camera preview"></canvas>
+  </header>
+
+  <div class="dial" aria-live="polite">
+    <svg viewBox="0 0 120 120" aria-hidden="true">
+      <circle class="track" cx="60" cy="60" r="54"/>
+      <circle class="prog" id="ring" cx="60" cy="60" r="54" stroke-dasharray="339.3" stroke-dashoffset="339.3"/>
+    </svg>
+    <div class="inner">
+      <svg id="heart" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.4C.9 8.2 3 4.5 6.6 4.5c2.1 0 3.6 1.2 5.4 3.3 1.8-2.1 3.3-3.3 5.4-3.3 3.6 0 5.7 3.7 4.2 7.1C19.5 16.4 12 21 12 21z"/></svg>
+      <div id="bpm" class="dim">--</div>
+      <div class="unit">bpm</div>
+    </div>
+  </div>
+
+  <div id="status">Cover the <b>rear camera and flash</b> with a fingertip, then press Start.</div>
+
+  <canvas id="wave"></canvas>
+
+  <button id="go">Start</button>
+
+  <div id="result" class="card">
+    <h2>Result</h2>
+    <div class="row"><span class="big" id="rBpm">--</span><span>bpm</span><span class="pill" id="rConf"></span></div>
+    <p id="rNote"></p>
+  </div>
+
+  <div id="hist" class="card">
+    <h2>History</h2>
+    <ul id="histList"></ul>
+    <button id="clear" hidden>Clear history</button>
+  </div>
+
+  <details class="card">
+    <summary>Tips for a fast, clean reading</summary>
+    <ul>
+      <li>Rest your fingertip <b>lightly</b> over both the lens and the flash. Pressing hard squeezes the blood out and flattens the signal.</li>
+      <li>Keep your hand and the phone still. Resting the phone on a table helps.</li>
+      <li>Cold fingers give weak signals: warm them up first.</li>
+      <li>A reading usually locks in 7–10 s. If it's taking longer, adjust your finger slightly.</li>
+      <li>Estimate only, not a medical device.</li>
+    </ul>
+  </details>
+
+  <div class="foot">No ads, no tracking. Everything is processed on this phone.</div>
+</main>
+
+<video id="vid" playsinline muted autoplay></video>
+<canvas id="grab" width="40" height="30" hidden></canvas>
+
+<script src="dsp.js"></script>
+<script>
+(() => {
+  'use strict';
+  const D = window.PulseDSP;
+  const $ = (id) => document.getElementById(id);
+  const vid = $('vid'), grab = $('grab'), gctx = grab.getContext('2d', { willReadFrequently: true });
+  const prev = $('preview'), pctx = prev.getContext('2d');
+  const wave = $('wave'), wctx = wave.getContext('2d');
+  const ring = $('ring'), RING = 339.3;
+  const bpmEl = $('bpm'), statusEl = $('status'), goBtn = $('go'), heart = $('heart');
+
+  // ---- tunables ----
+  const SETTLE_S = 1.0;      // discard while auto-exposure settles
+  const MIN_S = 6.5;         // earliest possible result
+  const TYPICAL_S = 9;       // for the progress ring
+  const MAX_S = 25;          // give up after this
+  const WIN_S = 8;           // analysis window
+  const STABLE_S = 2.5;      // estimates must agree over this span
+  const EST_EVERY = 0.25;    // seconds between estimates
+
+  // ---- storage (optional; page works without it) ----
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  };
+
+  // ---- state ----
+  let stream = null, track = null, torchOn = false, running = false, wakeLock = null;
+  let phase = 'idle';          // idle | nofinger | settling | measuring
+  let fingerSince = 0, fingerLostAt = 0, settleUntil = 0, t0 = 0;
+  let ts = [], rs = [], gs = [];
+  let ests = [], lastEst = 0, lastBeatT = 0, useMediaTime = null, lastMediaTime = -1;
+  let channel = 'r';
+
+  function setStatus(html) { statusEl.innerHTML = html; }
+  function setRing(f) {
+    f = Math.max(0, Math.min(1, f));
+    ring.style.strokeLinecap = f >= 1 ? 'butt' : 'round';
+    ring.style.strokeDashoffset = String(RING * (1 - f));
+  }
+  function setBpm(v, confident) {
+    bpmEl.textContent = v ? String(Math.round(v)) : '--';
+    bpmEl.classList.toggle('dim', !confident);
+  }
+  function beat() {
+    heart.classList.add('beat');
+    setTimeout(() => heart.classList.remove('beat'), 130);
+  }
+
+  // ---- camera + torch ----
+  const BASE = { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 30 } };
+  function caps(t) { try { return t.getCapabilities ? t.getCapabilities() : {}; } catch { return {}; } }
+  async function open(constraints) {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: false, video: constraints });
+    return { s, t: s.getVideoTracks()[0] };
+  }
+  function stopStream(s) { if (s) s.getTracks().forEach((t) => t.stop()); }
+
+  async function openCameraWithTorch() {
+    // 1) the camera that worked last time (fast path)
+    const remembered = store.get('pulse.cam', null);
+    if (remembered) {
+      try {
+        const c = await open({ ...BASE, deviceId: { exact: remembered } });
+        if (caps(c.t).torch) return c;
+        stopStream(c.s);
+      } catch {}
+    }
+    // 2) default rear camera
+    let c = await open({ ...BASE, facingMode: { ideal: 'environment' } });
+    if (caps(c.t).torch) { remember(c.t); return c; }
+    // 3) other rear cameras (multi-camera phones often put the flash on one)
+    try {
+      const firstId = c.t.getSettings().deviceId;
+      const devs = (await navigator.mediaDevices.enumerateDevices())
+        .filter((d) => d.kind === 'videoinput' && d.deviceId && d.deviceId !== firstId);
+      const back = devs.filter((d) => /back|rear|environment/i.test(d.label));
+      for (const d of back.slice(0, 4)) {
+        stopStream(c.s);
+        try {
+          const cc = await open({ ...BASE, deviceId: { exact: d.deviceId } });
+          if (caps(cc.t).torch) { remember(cc.t); return cc; }
+          c = cc;
+        } catch {}
+      }
+    } catch {}
+    // 4) no torch anywhere: fall back to the default rear camera
+    stopStream(c.s);
+    return open({ ...BASE, facingMode: { ideal: 'environment' } });
+  }
+  function remember(t) { try { store.set('pulse.cam', t.getSettings().deviceId); } catch {} }
+
+  async function setTorch(on) {
+    if (!track) return false;
+    try { await track.applyConstraints({ advanced: [{ torch: on }] }); return true; }
+    catch { return false; }
+  }
+
+  // ---- start / stop ----
+  async function start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus('Camera not available here. Open this page over <b>https</b> in Chrome.');
+      return;
+    }
+    $('result').style.display = 'none';
+    goBtn.textContent = 'Stop'; goBtn.classList.add('stop');
+    setStatus('Starting camera…');
+    try {
+      const c = await openCameraWithTorch();
+      stream = c.s; track = c.t;
+    } catch (e) {
+      setStatus(e && e.name === 'NotAllowedError'
+        ? 'Camera permission was denied. Allow it in the browser’s site settings and try again.'
+        : 'Couldn’t open the camera (' + (e && e.name || 'error') + ').');
+      resetButton();
+      return;
+    }
+    vid.srcObject = stream;
+    try { await vid.play(); } catch {}
+    torchOn = await setTorch(true);
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+    running = true;
+    resetMeasurement('nofinger');
+    setStatus(torchOn
+      ? 'Place your fingertip over the <b>camera and flash</b>.'
+      : 'No flash control on this camera. Cover the lens and hold a <b>bright light</b> behind your finger.');
+    loop();
+  }
+
+  function stop() {
+    running = false;
+    setTorch(false);
+    stopStream(stream); stream = null; track = null; torchOn = false;
+    vid.srcObject = null;
+    try { wakeLock && wakeLock.release(); } catch {}
+    wakeLock = null;
+    phase = 'idle';
+    resetButton();
+  }
+  function resetButton() { goBtn.textContent = 'Start'; goBtn.classList.remove('stop'); }
+
+  function resetMeasurement(p) {
+    phase = p; ts = []; rs = []; gs = []; ests = []; lastEst = 0;
+    setRing(0); setBpm(0, false); clearWave();
+  }
+
+  goBtn.addEventListener('click', () => (running ? (stop(), setStatus('Stopped.')) : start()));
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && running) { stop(); setStatus('Paused while the app was in the background.'); }
+  });
+
+  // ---- frame loop ----
+  function loop() {
+    if (!running) return;
+    if (vid.requestVideoFrameCallback) vid.requestVideoFrameCallback(onFrame);
+    else requestAnimationFrame((now) => onFrame(now, null));
+  }
+
+  function onFrame(now, meta) {
+    if (!running) return;
+    // timestamp: media time of the frame when available (less jitter)
+    if (useMediaTime === null) useMediaTime = !!(meta && meta.mediaTime > 0);
+    let t = useMediaTime && meta ? meta.mediaTime : now / 1000;
+    if (!meta) { // rAF fallback: skip repeated frames
+      if (vid.currentTime === lastMediaTime) { loop(); return; }
+      lastMediaTime = vid.currentTime;
+    }
+    if (vid.videoWidth) process(t);
+    loop();
+  }
+
+  function process(t) {
+    const W = grab.width, H = grab.height;
+    gctx.drawImage(vid, 0, 0, W, H);
+    pctx.drawImage(vid, 0, 0, prev.width, prev.height);
+    const px = gctx.getImageData(0, 0, W, H).data;
+    // centre 60% of the frame
+    const x0 = Math.floor(W * 0.2), x1 = Math.ceil(W * 0.8), y0 = Math.floor(H * 0.2), y1 = Math.ceil(H * 0.8);
+    let R = 0, G = 0, B = 0, R2 = 0, n = 0;
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      const i = (y * W + x) * 4, r = px[i];
+      R += r; G += px[i + 1]; B += px[i + 2]; R2 += r * r; n++;
+    }
+    R /= n; G /= n; B /= n;
+    const sd = Math.sqrt(Math.max(0, R2 / n - R * R));
+    const finger = R > 50 && R > 1.4 * G && R > 1.4 * B && sd < 32;
+    step(t, R, G, finger);
+  }
+
+  function step(t, R, G, finger) {
+    if (phase === 'nofinger') {
+      if (finger) {
+        if (!fingerSince) fingerSince = t;
+        if (t - fingerSince > 0.3) { phase = 'settling'; settleUntil = t + SETTLE_S; setStatus('Hold still…'); }
+      } else fingerSince = 0;
+      return;
+    }
+    if (!finger) {
+      if (!fingerLostAt) fingerLostAt = t;
+      if (t - fingerLostAt > 0.4) {
+        resetMeasurement('nofinger'); fingerSince = 0; fingerLostAt = 0;
+        setStatus('Finger moved. Cover the <b>camera and flash</b> again.');
+      }
+      return;
+    }
+    fingerLostAt = 0;
+    if (phase === 'settling') {
+      if (t >= settleUntil) { phase = 'measuring'; t0 = t; setStatus('Measuring. Keep still…'); }
+      return;
+    }
+    // measuring
+    ts.push(t - t0); rs.push(R); gs.push(G);
+    if (ts.length > 30 * 40) { ts.shift(); rs.shift(); gs.shift(); }
+    const el = t - t0;
+    drawWave();
+    if (el - lastEst >= EST_EVERY && el >= 3.5) { lastEst = el; estimateNow(el); }
+    if (phase === 'measuring') setRing(Math.min(0.97, el / TYPICAL_S));
+  }
+
+  function estimateNow(el) {
+    const dur = Math.min(el, WIN_S);
+    const er = D.estimate(ts, rs, dur), eg = D.estimate(ts, gs, dur);
+    const e = eg.q > er.q * 1.15 ? eg : er;
+    channel = e === eg ? 'g' : 'r';
+    if (e.bpm > 0) ests.push({ t: el, bpm: e.bpm, q: e.q });
+    setBpm(e.q > 0.3 ? e.bpm : 0, false);
+
+    // done? recent estimates must agree and look clean
+    if (el >= MIN_S) {
+      const rec = ests.filter((x) => x.t >= el - STABLE_S);
+      if (rec.length >= 8) {
+        const b = rec.map((x) => x.bpm), med = D.median(b);
+        const spread = Math.max(...b) - Math.min(...b);
+        const minQ = Math.min(...rec.map((x) => x.q));
+        // slow hearts need a bit longer: insist on ~7 beats of data
+        if (el >= 7 * 60 / med && minQ >= 0.35 && spread <= Math.max(3, 0.04 * med)) {
+          const meanQ = rec.reduce((s, x) => s + x.q, 0) / rec.length;
+          return finish(med, meanQ >= 0.5 ? 'good' : 'fair', el);
+        }
+      }
+      if (el > 12) setStatus('Still locking on. Try <b>lighter pressure</b> and keep very still.');
+    }
+    if (el >= MAX_S) {
+      const ok = ests.filter((x) => x.t >= el - 8 && x.q >= 0.3);
+      if (ok.length >= 6) return finish(D.median(ok.map((x) => x.bpm)), 'fair', el);
+      stop();
+      setRing(0); setBpm(0, false);
+      setStatus('Couldn’t get a clean signal. Cover the lens and flash fully, press <b>lightly</b>, keep still, and try again.');
+    }
+  }
+
+  function finish(bpm, conf, el) {
+    const v = Math.round(bpm);
+    stop();
+    setRing(1); setBpm(v, true);
+    try { navigator.vibrate && navigator.vibrate(60); } catch {}
+    setStatus('Done. You can lift your finger.');
+    $('rBpm').textContent = v;
+    const pill = $('rConf');
+    pill.textContent = conf === 'good' ? 'clean signal' : 'noisy signal';
+    pill.className = 'pill ' + conf;
+    $('rNote').textContent = `Measured in ${el.toFixed(1)} s` +
+      (conf === 'good' ? '.' : '. Measure again for a more reliable reading.');
+    $('result').style.display = 'block';
+    const h = store.get('pulse.history', []);
+    h.unshift({ t: Date.now(), bpm: v, conf });
+    store.set('pulse.history', h.slice(0, 50));
+    renderHistory();
+  }
+
+  // ---- waveform ----
+  function sizeWave() {
+    const dpr = window.devicePixelRatio || 1;
+    wave.width = Math.round(wave.clientWidth * dpr);
+    wave.height = Math.round(wave.clientHeight * dpr);
+  }
+  function clearWave() { wctx.clearRect(0, 0, wave.width, wave.height); }
+  function drawWave() {
+    const vs = channel === 'g' ? gs : rs;
+    const u = D.resample(ts, vs, 5);
+    if (u.length < 20) return;
+    const s = D.bandpass(u);
+    const peaks = D.findPeaks(s, D.FS, ests.length ? ests[ests.length - 1].bpm : 0);
+    // beat animation on a fresh peak (the last ~2 samples can't be peaks yet)
+    if (peaks.length) {
+      const pt = ts[ts.length - 1] - (s.length - 1 - peaks[peaks.length - 1]) / D.FS;
+      if (pt > lastBeatT + 0.25 && ts[ts.length - 1] - pt < 0.35) { lastBeatT = pt; beat(); }
+    }
+    const W = wave.width, H = wave.height, pad = H * 0.12;
+    const sorted = s.map(Math.abs).sort((a, b) => a - b);
+    const amp = sorted[Math.floor(sorted.length * 0.95)] || 1;
+    clearWave();
+    wctx.lineWidth = Math.max(2, W / 220);
+    wctx.strokeStyle = '#ff3b4e'; wctx.lineJoin = 'round';
+    wctx.beginPath();
+    const N = 5 * D.FS, off = N - s.length;
+    for (let i = 0; i < s.length; i++) {
+      const x = ((i + off) / (N - 1)) * W;
+      const y = H / 2 - Math.max(-1.2, Math.min(1.2, s[i] / amp)) * (H / 2 - pad);
+      i ? wctx.lineTo(x, y) : wctx.moveTo(x, y);
+    }
+    wctx.stroke();
+    wctx.fillStyle = '#f4eeee';
+    for (const p of peaks) {
+      const x = ((p + off) / (N - 1)) * W;
+      const y = H / 2 - Math.max(-1.2, Math.min(1.2, s[p] / amp)) * (H / 2 - pad);
+      wctx.beginPath(); wctx.arc(x, y, wctx.lineWidth * 1.4, 0, Math.PI * 2); wctx.fill();
+    }
+  }
+
+  // ---- history ----
+  function renderHistory() {
+    const h = store.get('pulse.history', []);
+    const ul = $('histList');
+    ul.innerHTML = '';
+    if (!h.length) { ul.innerHTML = '<li class="empty">No readings yet.</li>'; $('clear').hidden = true; return; }
+    for (const r of h.slice(0, 10)) {
+      const li = document.createElement('li');
+      const d = new Date(r.t);
+      const when = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ', ' +
+        d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      li.innerHTML = `<span>${when}</span><span><b>${r.bpm}</b> bpm${r.conf === 'good' ? '' : ' <small style="color:var(--warn)">·noisy</small>'}</span>`;
+      ul.appendChild(li);
+    }
+    $('clear').hidden = false;
+  }
+  $('clear').addEventListener('click', () => { store.set('pulse.history', []); renderHistory(); });
+
+  window.addEventListener('resize', sizeWave);
+  sizeWave(); renderHistory();
+
+  // offline / installable
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+  window.__pulse = { get phase() { return phase; }, get ests() { return ests; } }; // for testing
+})();
+</script>
+</body>
+</html>
